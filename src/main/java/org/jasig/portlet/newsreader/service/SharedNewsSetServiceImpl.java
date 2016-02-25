@@ -27,7 +27,10 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.jasig.portlet.newsreader.NewsSet;
 import org.jasig.portlet.newsreader.dao.NewsStore;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+@Service
 public class SharedNewsSetServiceImpl implements NewsSetResolvingService {
 
 	private static Log log = LogFactory.getLog(SharedNewsSetServiceImpl.class);
@@ -38,6 +41,7 @@ public class SharedNewsSetServiceImpl implements NewsSetResolvingService {
 	 * 
 	 * Initalise the NewsSet  
 	 */
+	@Transactional
 	public NewsSet getNewsSet(String fname, PortletRequest request) {
 
 		PortletSession session = request.getPortletSession();

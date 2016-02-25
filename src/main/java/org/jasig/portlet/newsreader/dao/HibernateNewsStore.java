@@ -23,15 +23,17 @@ import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.hibernate.HibernateException;
 import org.hibernate.Query;
+import org.hibernate.SessionFactory;
 import org.jasig.portlet.newsreader.NewsConfiguration;
 import org.jasig.portlet.newsreader.NewsDefinition;
 import org.jasig.portlet.newsreader.NewsSet;
 import org.jasig.portlet.newsreader.PredefinedNewsConfiguration;
 import org.jasig.portlet.newsreader.PredefinedNewsDefinition;
 import org.jasig.portlet.newsreader.UserDefinedNewsConfiguration;
-import org.springframework.orm.hibernate3.support.HibernateDaoSupport;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 
 /**
@@ -40,311 +42,225 @@ import org.springframework.orm.hibernate3.support.HibernateDaoSupport;
  * @author Anthony Colebourne
  * @author Jen Bourey
  */
-public class HibernateNewsStore extends HibernateDaoSupport implements
-        NewsStore {
+@Service
+@Transactional
+public class HibernateNewsStore implements NewsStore {
 
     private static Log log = LogFactory.getLog(HibernateNewsStore.class);
 
+    @Override
     public void storeNewsDefinition(NewsDefinition listing) {
-        try {
-
-            getHibernateTemplate().saveOrUpdate(listing);
-            getHibernateTemplate().flush();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+       	sessionFactory.getCurrentSession().saveOrUpdate(listing);
+       	sessionFactory.getCurrentSession().flush();
     }
 
+    @Override
     public void storeNewsConfiguration(NewsConfiguration configuration) {
-        try {
-
-            getHibernateTemplate().saveOrUpdate(configuration);
-            getHibernateTemplate().flush();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+       	sessionFactory.getCurrentSession().saveOrUpdate(configuration);
+       	sessionFactory.getCurrentSession().flush();
     }
 
-    public List<NewsConfiguration> getNewsConfigurations(
-            String subscribeId) {
-        try {
-
-            log.debug("fetching news configurations for " + subscribeId);
-            return (List<NewsConfiguration>) getHibernateTemplate().find(
+    @Override
+	public List<NewsConfiguration> getNewsConfigurations(String subscribeId) {
+    	log.debug("fetching news configurations for " + subscribeId);
+    	
+    	Query query = sessionFactory.getCurrentSession().createQuery(
                     "from NewsConfiguration config where "
-                            + "subscribeId = ? and displayed = true "
-                            + "order by newsDefinition.name", subscribeId);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+                            + "subscribeId = :subscribeId and displayed = true ");
+    	query.setParameter("subscribeId", subscribeId);
+    	return (List<NewsConfiguration>) query.list();
     }
 
-    public List<UserDefinedNewsConfiguration> getUserDefinedNewsConfigurations(
-            Long setId, boolean visibleOnly) {
-        try {
-
-            String query = "from NewsConfiguration config where "
-                    + "config.newsSet.id = ? and "
+    @Override
+    public List<UserDefinedNewsConfiguration> getUserDefinedNewsConfigurations(Long setId, boolean visibleOnly) {
+    	String hql = "from NewsConfiguration config where "
+                    + "config.newsSet.id = :id and "
                     + "config.class = UserDefinedNewsConfiguration "
                     + "order by newsDefinition.name";
-            if (visibleOnly)
-                query = query.concat(" and visibleOnly = true");
+    	if (visibleOnly) {
+    		hql = hql.concat(" and visibleOnly = true");
+    	}
 
-            return (List<UserDefinedNewsConfiguration>) getHibernateTemplate()
-                    .find(query, setId);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+    	Query query = sessionFactory.getCurrentSession().createQuery(hql);
+    	query.setParameter("id", setId);
+    	
+    	return (List<UserDefinedNewsConfiguration>) query.list();
     }
 
+    @Override
     public List<PredefinedNewsConfiguration> getPredefinedNewsConfigurations(
             Long setId, boolean visibleOnly) {
-        try {
-            String query = "from NewsConfiguration config "
-                    + "where config.newsSet.id = ? and "
+
+    	String hql = "from NewsConfiguration config "
+                    + "where config.newsSet.id = :id and "
                     + "config.class = PredefinedNewsConfiguration "
                     + "order by newsDefinition.name";
-            if (visibleOnly)
-                query = query.concat(" and visibleOnly = true");
+    	if (visibleOnly) {
+    		hql = hql.concat(" and visibleOnly = true");
+    	}
 
-            return (List<PredefinedNewsConfiguration>) getHibernateTemplate()
-                    .find(query, setId);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+    	Query query = sessionFactory.getCurrentSession().createQuery(hql);
+    	query.setParameter("id", setId);
+    	
+    	return (List<PredefinedNewsConfiguration>) query.list(); 
     }
 
+    @Override
     public List<PredefinedNewsConfiguration> getPredefinedNewsConfigurations() {
-        try {
-
             String query = "from NewsDefinition def "
                     + "where def.class = PredefinedNewsDefinition "
                     + "order by def.name";
-            return (List<PredefinedNewsConfiguration>) getHibernateTemplate()
+            return (List<PredefinedNewsConfiguration>) sessionFactory.getCurrentSession()
                     .find(query);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
     }
 
+    @Override
     public List<PredefinedNewsDefinition> getHiddenPredefinedNewsDefinitions(Long setId, Set<String> roles) {
-        try {
-
-            String query = "from PredefinedNewsDefinition def "
+    	String query = "from PredefinedNewsDefinition def "
                     + "where :setId not in (select config.newsSet.id "
                     + "from def.userConfigurations config) ";
-            for (int i = 0; i < roles.size(); i++) {
-                query = query.concat(
+    	for (int i = 0; i < roles.size(); i++) {
+    		query = query.concat(
                         "and :role" + i + " not in elements(def.defaultRoles) ");
-            }
+    	}
 
-            Query q = this.getSession().createQuery(query);
-            q.setLong("setId", setId);
-            int count = 0;
-            for (String role : roles) {
-                q.setString("role" + count, role);
-                count++;
-            }
-            return (List<PredefinedNewsDefinition>) q.list();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+    	Query q = sessionFactory.getCurrentSession().createQuery(query);
+    	q.setLong("setId", setId);
+    	int count = 0;
+    	for (String role : roles) {
+    		q.setString("role" + count, role);
+    		count++;
+    	}
+    	return (List<PredefinedNewsDefinition>) q.list();
     }
 
+    @Override
     public void initNews(NewsSet set, Set<String> roles) {
-        try {
+    	//if the user doesn't have any roles, we don't have any
+    	//chance of getting predefined newss, so just go ahead
+    	//and return
+    	if (roles.isEmpty()) {
+    		return;
+    	}
 
-            // if the user doesn't have any roles, we don't have any
-            // chance of getting predefined newss, so just go ahead
-            // and return
-            if (roles.isEmpty())
-                return;
-
-            String query = "from PredefinedNewsDefinition def "
+    	String query = "from PredefinedNewsDefinition def "
                     + "left join fetch def.defaultRoles role where "
                     + ":setId not in (select config.newsSet.id "
                     + "from def.userConfigurations config)";
-            if (roles.size() > 0)
-                query = query.concat("and role in (:roles)");
-            Query q = this.getSession().createQuery(query);
-            q.setLong("setId", set.getId());
-            if (roles.size() > 0)
-                q.setParameterList("roles", roles);
-            List<PredefinedNewsDefinition> defs = q.list();
+    	if (roles.size() > 0) {
+    		query = query.concat("and role in (:roles)");
+    	}
+    	Query q = sessionFactory.getCurrentSession().createQuery(query);
+    	q.setLong("setId", set.getId());
+    	if (roles.size() > 0) {
+    		q.setParameterList("roles", roles);
+    	}
+    	List<PredefinedNewsDefinition> defs = q.list();
 
-            for (PredefinedNewsDefinition def : defs) {
-                PredefinedNewsConfiguration config = new PredefinedNewsConfiguration();
-                config.setNewsDefinition(def);
-                set.addNewsConfiguration(config);
-            }
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+    	for (PredefinedNewsDefinition def : defs) {
+    		PredefinedNewsConfiguration config = new PredefinedNewsConfiguration();
+    		config.setNewsDefinition(def);
+    		set.addNewsConfiguration(config);
+    	}
     }
 
+    @Override
     public PredefinedNewsDefinition getPredefinedNewsDefinition(Long id) {
-
-        try {
-
             String query = "from PredefinedNewsDefinition def "
                     + "left join fetch def.defaultRoles role where "
                     + "def.id = :id";
-            Query q = this.getSession().createQuery(query);
+            Query q = sessionFactory.getCurrentSession().createQuery(query);
             q.setLong("id", id);
             return (PredefinedNewsDefinition) q.uniqueResult();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
-
     }
 
+    @Override
     public PredefinedNewsDefinition getPredefinedNewsDefinitionByName(String name) {
-
-        try {
-
-            String query = "from PredefinedNewsDefinition def "
+    	String query = "from PredefinedNewsDefinition def "
                     + "left join fetch def.defaultRoles role where "
                     + "def.name = :name";
-            Query q = this.getSession().createQuery(query);
-            q.setString("name", name);
-            return (PredefinedNewsDefinition) q.uniqueResult();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
-
+    	Query q = sessionFactory.getCurrentSession().createQuery(query);
+    	q.setString("name", name);
+    	return (PredefinedNewsDefinition) q.uniqueResult();
     }
 
+    @Override
     public NewsDefinition getNewsDefinition(Long id) {
-
-        try {
-
-            return (NewsDefinition) getHibernateTemplate().get(NewsDefinition.class, id);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
-
+    	return (NewsDefinition) sessionFactory.getCurrentSession().get(NewsDefinition.class, id);
     }
 
+    @Override
     public NewsConfiguration getNewsConfiguration(Long id) {
-
-        try {
-
-            return (NewsConfiguration) getHibernateTemplate().load(
-                    NewsConfiguration.class, id);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
-
+    	return (NewsConfiguration) sessionFactory.getCurrentSession().load(NewsConfiguration.class, id);
     }
 
+    @Override
     public void deleteNewsConfiguration(NewsConfiguration configuration) {
-        try {
-
-            getHibernateTemplate().delete(configuration);
-            getHibernateTemplate().flush();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+    	sessionFactory.getCurrentSession().delete(configuration);
+    	sessionFactory.getCurrentSession().flush();
     }
 
+    @Override
     public void deleteNewsDefinition(PredefinedNewsDefinition definition) {
-        try {
-            
-            String query = "from NewsConfiguration config "
-                + "where config.newsDefinition.id = ? and "
+    	String hql = "from NewsConfiguration config "
+                + "where config.newsDefinition.id = :id and "
                 + "config.class = PredefinedNewsConfiguration";
 
-            List<PredefinedNewsConfiguration> configs = (List<PredefinedNewsConfiguration>) getHibernateTemplate()
-                    .find(query, definition.getId());
-            getHibernateTemplate().deleteAll(configs);
-
-            getHibernateTemplate().delete(definition);
-            getHibernateTemplate().flush();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+    	Query query = sessionFactory.getCurrentSession().createQuery(hql);
+    	query.setParameter("id", definition.getId());
+    	
+    	List<PredefinedNewsConfiguration> configs = query.list();
+    	
+    	sessionFactory.getCurrentSession().delete(configs);
+    	sessionFactory.getCurrentSession().delete(definition);
+    	sessionFactory.getCurrentSession().flush();
     }
 
+    @Override
     public List<String> getUserRoles() {
-        try {
-
-            String query = "select distinct elements(def.defaultRoles) " +
+    	String query = "select distinct elements(def.defaultRoles) " +
                     "from PredefinedNewsDefinition def ";
 
-            return (List<String>) getHibernateTemplate()
-                    .find(query);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+    	return (List<String>) sessionFactory.getCurrentSession().find(query);
     }
 
+    @Override
 	public NewsSet getNewsSet(Long id) {
-
-        try {
-
-            return (NewsSet) getHibernateTemplate().get(NewsSet.class, id);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
-
+		return (NewsSet) sessionFactory.getCurrentSession().get(NewsSet.class, id);
 	}
 
+    @Override
 	public List<NewsSet> getNewsSetsForUser(String userId) {
-        try {
-
-            log.debug("fetching news sets for " + userId);
-            return (List<NewsSet>) getHibernateTemplate().find(
+		log.debug("fetching news sets for " + userId);
+		
+		Query query = sessionFactory.getCurrentSession().createQuery(
                     "from NewsSet newsSet where "
-                            + "newsSet.userId = ? "
-                            + "order by newsSet.name", userId);
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+                            + "newsSet.userId = :id "
+                            + "order by newsSet.name");
+		query.setParameter("id", userId);
+		
+		return (List<NewsSet>) query.list();
 	}
 
+    @Override
 	public void storeNewsSet(NewsSet set) {
-        try {
-
-            getHibernateTemplate().saveOrUpdate(set);
-            getHibernateTemplate().flush();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+		sessionFactory.getCurrentSession().saveOrUpdate(set);
+		sessionFactory.getCurrentSession().flush();
 	}
 
+    @Override
 	public NewsSet getNewsSet(String userId, String setName) {
-        try {
-
-            log.debug("fetching news sets for " + userId);
-            String query = "from NewsSet newsSet where :userId = newsSet.userId and " +
+		log.debug("fetching news sets for " + userId);
+		String query = "from NewsSet newsSet where :userId = newsSet.userId and " +
             		":setName = newsSet.name order by newsSet.name";
 
-	        Query q = this.getSession().createQuery(query);
-	        q.setString("userId", userId);
-	        q.setString("setName", setName);
-	        return (NewsSet) q.uniqueResult();
-
-        } catch (HibernateException ex) {
-            throw convertHibernateAccessException(ex);
-        }
+		Query q = sessionFactory.getCurrentSession().createQuery(query);
+		q.setString("userId", userId);
+		q.setString("setName", setName);
+		log.debug("Size of result set" + q.list().size());
+		return (NewsSet) q.uniqueResult();
 	}
 
+	@Autowired
+	SessionFactory sessionFactory;	
 }
